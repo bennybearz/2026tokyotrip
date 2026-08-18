@@ -113,6 +113,67 @@ function buildHandler(basePath) {
       );
 
       server.tool(
+        "import_state_from",
+        "One-time migration: fetch the FULL state (days, items, photos, ideas) from another live deployment of this dashboard and overwrite this deployment's state with it. Gates in with a viewer passphrase server-side. Destructive: replaces the entire current state.",
+        {
+          url: z.string().describe("Base URL of the source deployment, e.g. https://2026tokyo.holub.life"),
+          gateWord: z.string().describe("A viewer passphrase accepted by the source site"),
+        },
+        async ({ url, gateWord }) => {
+          const base = url.replace(/\/+$/, "");
+          if (!/^https:\/\//.test(base)) return text({ error: "https URLs only" });
+          // 1) gate in to get the wt_gate cookie
+          const gateRes = await fetch(`${base}/api/gate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ word: gateWord }),
+            cache: "no-store",
+          });
+          if (!gateRes.ok) return text({ error: `Gate failed (${gateRes.status})` });
+          const cookie = (gateRes.headers.getSetCookie?.() || [gateRes.headers.get("set-cookie")].filter(Boolean))
+            .map((c) => c.split(";")[0])
+            .join("; ");
+          if (!cookie) return text({ error: "Source did not set a gate cookie" });
+          // 2) read full state
+          const stateRes = await fetch(`${base}/api/state`, {
+            headers: { cookie },
+            cache: "no-store",
+          });
+          if (!stateRes.ok) return text({ error: `State read failed (${stateRes.status})` });
+          const payload = await stateRes.json();
+          const incoming = payload?.state;
+          if (!incoming || !Array.isArray(incoming.days) || !Array.isArray(incoming.ideas)) {
+            return text({ error: "Source state missing or malformed", access: payload?.access });
+          }
+          // 3) overwrite local state
+          await writeState(incoming);
+          const photoCount =
+            (incoming.generalPhotos || []).length +
+            incoming.days.reduce(
+              (n, d) =>
+                n +
+                [...(d.items || []), ...(d.fixed || [])].reduce(
+                  (m, i) => m + (i.photos || []).length,
+                  0
+                ),
+              0
+            );
+          return text({
+            ok: true,
+            imported: {
+              tripName: incoming.tripName,
+              days: incoming.days.length,
+              items: incoming.days.reduce((n, d) => n + (d.items || []).length, 0),
+              ideas: incoming.ideas.length,
+              photos: photoCount,
+              sourceUpdatedAt: incoming.updatedAt,
+            },
+            note: photoCount > 0 ? "Photo URLs still point at the source project's blob store — keep the old project alive or re-upload photos." : undefined,
+          });
+        }
+      );
+
+      server.tool(
         "delete_item",
         "Delete an itinerary item from a day (also removes its photos from storage).",
         { date: z.string().describe("Day date YYYY-MM-DD"), id: z.string().describe("Item id") },
