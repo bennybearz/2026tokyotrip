@@ -113,6 +113,66 @@ function buildHandler(basePath) {
       );
 
       server.tool(
+        "import_ideas_from",
+        "Selectively merge IDEAS from another live deployment of this dashboard into this one. Fetches the source's full state (gating in server-side with a viewer passphrase) and adds any ideas not already present locally (matched by id, or by name+suggester). Does NOT touch days, items, or photos. Imported ideas keep their status; approved-but-unscheduled ones can then be slotted with schedule_idea.",
+        {
+          url: z.string().describe("Base URL of the source deployment, e.g. https://weebathon.vercel.app"),
+          gateWord: z.string().describe("A viewer passphrase accepted by the source site"),
+        },
+        async ({ url, gateWord }) => {
+          const base = url.replace(/\/+$/, "");
+          if (!/^https:\/\//.test(base)) return text({ error: "https URLs only" });
+          const gateRes = await fetch(`${base}/api/gate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pass: gateWord }),
+            cache: "no-store",
+          });
+          if (!gateRes.ok) return text({ error: `Gate failed (${gateRes.status})` });
+          const cookie = (gateRes.headers.getSetCookie?.() || [gateRes.headers.get("set-cookie")].filter(Boolean))
+            .map((c) => c.split(";")[0])
+            .join("; ");
+          if (!cookie) return text({ error: "Source did not set a gate cookie" });
+          const stateRes = await fetch(`${base}/api/state`, { headers: { cookie }, cache: "no-store" });
+          if (!stateRes.ok) return text({ error: `State read failed (${stateRes.status})` });
+          const incoming = (await stateRes.json())?.state;
+          if (!incoming || !Array.isArray(incoming.ideas)) {
+            return text({ error: "Source state missing or malformed" });
+          }
+          const state = await readState();
+          const key = (i) => `${(i.name || "").trim().toLowerCase()}|${(i.by || "").trim().toLowerCase()}`;
+          const haveIds = new Set(state.ideas.map((i) => i.id));
+          const haveKeys = new Set(state.ideas.map(key));
+          // Also skip ideas whose name already exists as an itinerary item (already slotted here).
+          const itemNames = new Set(
+            state.days.flatMap((d) => [...(d.items || []), ...(d.fixed || [])]).map((i) => (i.name || "").trim().toLowerCase())
+          );
+          const added = [];
+          const skipped = [];
+          for (const idea of incoming.ideas) {
+            if (haveIds.has(idea.id) || haveKeys.has(key(idea))) {
+              skipped.push({ name: idea.name, reason: "already present" });
+              continue;
+            }
+            if (idea.approvedDay && itemNames.has((idea.name || "").trim().toLowerCase())) {
+              skipped.push({ name: idea.name, reason: "already slotted as item" });
+              continue;
+            }
+            // Imported approved-but-scheduled ideas from the source arrive unscheduled
+            // here (their day items were not copied) — clear approvedDay so they can be slotted.
+            const copy = { ...idea };
+            if (copy.status === "approved" && copy.approvedDay && !itemNames.has((copy.name || "").trim().toLowerCase())) {
+              copy.approvedDay = null;
+            }
+            state.ideas.unshift(copy);
+            added.push({ name: copy.name, by: copy.by, status: copy.status, approvedDay: copy.approvedDay });
+          }
+          if (added.length) await writeState(state);
+          return text({ ok: true, added, skipped, sourceIdeaCount: incoming.ideas.length });
+        }
+      );
+
+      server.tool(
         "import_state_from",
         "One-time migration: fetch the FULL state (days, items, photos, ideas) from another live deployment of this dashboard and overwrite this deployment's state with it. Gates in with a viewer passphrase server-side. Destructive: replaces the entire current state.",
         {
