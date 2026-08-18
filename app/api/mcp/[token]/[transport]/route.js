@@ -126,7 +126,7 @@ function buildHandler(basePath) {
           const gateRes = await fetch(`${base}/api/gate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ word: gateWord }),
+            body: JSON.stringify({ pass: gateWord }),
             cache: "no-store",
           });
           if (!gateRes.ok) return text({ error: `Gate failed (${gateRes.status})` });
