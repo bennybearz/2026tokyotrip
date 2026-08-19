@@ -41,11 +41,15 @@ function allPhotos(state) {
 let openLightboxFn = null;
 const openLightbox = (photos, i) => openLightboxFn && openLightboxFn(photos, i);
 
-// All photos for one day (items + fixed), tagged with their activity, in capture order.
-function dayPhotos(day) {
+// All photos for one day: activity photos plus general/album photos captured
+// on that Tokyo date, tagged with their activity where known, in capture order.
+function dayPhotos(day, state) {
   const out = [];
   for (const it of [...(day.fixed || []), ...(day.items || [])])
     for (const p of it.photos || []) out.push({ ...p, item: it.name, itemId: it.id });
+  for (const p of state?.generalPhotos || []) {
+    if (p.at && tokyoDateOf(p.at) === day.date) out.push({ ...p, item: null, itemId: "general" });
+  }
   out.sort((a, b) => (a.at < b.at ? -1 : 1));
   return out;
 }
@@ -653,13 +657,13 @@ function SplitItinerary({
         <div className="head static">
           <h2>{day.title}</h2>
           <span className="date">
-            {dayPhotos(day).length > 0 && (
+            {dayPhotos(day, state).length > 0 && (
               <button
                 className="photoBtn"
                 title="View this day's photos"
-                onClick={() => openLightbox(dayPhotos(day), 0)}
+                onClick={() => openLightbox(dayPhotos(day, state), 0)}
               >
-                📷 {dayPhotos(day).length}
+                📷 {dayPhotos(day, state).length}
               </button>
             )}
             {isToday && <span className="today">TODAY</span>}
@@ -926,7 +930,7 @@ function MobileItinerary({
   const renderDay = (day) => {
     const open = openDay === day.date;
     const isToday = day.date === today;
-    const nPhotos = dayPhotos(day).length;
+    const nPhotos = dayPhotos(day, state).length;
     const fixed = hideDone ? day.fixed.filter((f) => !f.done) : day.fixed;
     const items = hideDone ? day.items.filter((i) => !i.done) : day.items;
     return (
@@ -942,7 +946,7 @@ function MobileItinerary({
                 title="View this day's photos"
                 onClick={(e) => {
                   e.stopPropagation();
-                  openLightbox(dayPhotos(day), 0);
+                  openLightbox(dayPhotos(day, state), 0);
                 }}
               >
                 📷 {nPhotos}
