@@ -41,6 +41,15 @@ function allPhotos(state) {
 let openLightboxFn = null;
 const openLightbox = (photos, i) => openLightboxFn && openLightboxFn(photos, i);
 
+// All photos for one day (items + fixed), tagged with their activity, in capture order.
+function dayPhotos(day) {
+  const out = [];
+  for (const it of [...(day.fixed || []), ...(day.items || [])])
+    for (const p of it.photos || []) out.push({ ...p, item: it.name, itemId: it.id });
+  out.sort((a, b) => (a.at < b.at ? -1 : 1));
+  return out;
+}
+
 const tokyoDateOf = (iso) =>
   iso ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(iso)) : null;
 const tokyoTimeOf = (iso) =>
@@ -644,6 +653,15 @@ function SplitItinerary({
         <div className="head static">
           <h2>{day.title}</h2>
           <span className="date">
+            {dayPhotos(day).length > 0 && (
+              <button
+                className="photoBtn"
+                title="View this day's photos"
+                onClick={() => openLightbox(dayPhotos(day), 0)}
+              >
+                📷 {dayPhotos(day).length}
+              </button>
+            )}
             {isToday && <span className="today">TODAY</span>}
             {fmtDay(day.date)}
           </span>
@@ -857,6 +875,16 @@ function ItemDetail({ sel, role, act, busy, upload, canCheck, toggleDone, onDele
         </div>
       )}
       {editing && <EditItemForm obj={obj} act={act} busy={busy} onClose={() => setEditing(false)} />}
+      {obj.photos?.length > 1 && (
+        <div className="links">
+          <button
+            className="small"
+            onClick={() => openLightbox(obj.photos.map((x) => ({ ...x, item: obj.name })), 0)}
+          >
+            🖼 View all {obj.photos.length} photos
+          </button>
+        </div>
+      )}
       {obj.photos?.length > 0 && (
         <div className="photoGrid">
           {obj.photos.map((p, pi) => (
@@ -898,7 +926,7 @@ function MobileItinerary({
   const renderDay = (day) => {
     const open = openDay === day.date;
     const isToday = day.date === today;
-    const nPhotos = day.items.reduce((n, i) => n + (i.photos?.length || 0), 0);
+    const nPhotos = dayPhotos(day).length;
     const fixed = hideDone ? day.fixed.filter((f) => !f.done) : day.fixed;
     const items = hideDone ? day.items.filter((i) => !i.done) : day.items;
     return (
@@ -907,7 +935,20 @@ function MobileItinerary({
           <h2>{day.title}</h2>
           <span className="date">
             {isToday && <span className="today">TODAY</span>}
-            {fmtDay(day.date)} {nPhotos > 0 && `· 📷 ${nPhotos}`} {open ? "▾" : "▸"}
+            {fmtDay(day.date)}{" "}
+            {nPhotos > 0 && (
+              <button
+                className="photoBtn"
+                title="View this day's photos"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openLightbox(dayPhotos(day), 0);
+                }}
+              >
+                📷 {nPhotos}
+              </button>
+            )}{" "}
+            {open ? "▾" : "▸"}
           </span>
         </div>
         {open && (
@@ -1032,6 +1073,16 @@ function MobileFixedCard({ f, role, busy, upload, act, canCheck, toggleDone }) {
         </div>
       )}
       {editing && <EditItemForm obj={f} act={act} busy={busy} onClose={() => setEditing(false)} />}
+      {f.photos?.length > 1 && (
+        <div className="links">
+          <button
+            className="small"
+            onClick={() => openLightbox(f.photos.map((x) => ({ ...x, item: f.name })), 0)}
+          >
+            🖼 View all {f.photos.length} photos
+          </button>
+        </div>
+      )}
       {f.photos?.length > 0 && (
         <div className="photoGrid">
           {f.photos.map((p, pi) => (
@@ -1143,6 +1194,16 @@ function MobileItemCard({ day, item, role, open, toggle, act, busy, upload, canC
             </div>
           )}
           {editing && <EditItemForm obj={item} act={act} busy={busy} onClose={() => setEditing(false)} />}
+          {item.photos?.length > 1 && (
+            <div className="links">
+              <button
+                className="small"
+                onClick={() => openLightbox(item.photos.map((x) => ({ ...x, item: item.name })), 0)}
+              >
+                🖼 View all {item.photos.length} photos
+              </button>
+            </div>
+          )}
           {item.photos?.length > 0 && (
             <div className="photoGrid">
               {item.photos.map((p, pi) => (

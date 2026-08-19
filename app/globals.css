@@ -399,6 +399,18 @@ textarea { min-height: 76px; resize: vertical; }
 
 /* ---------- photo lightbox ---------- */
 .lbOpen { cursor: zoom-in; }
+.photoBtn {
+  border: 1px solid var(--border-strong);
+  background: var(--glass2);
+  color: var(--text);
+  font-size: 0.72rem;
+  padding: 3px 9px;
+  border-radius: 99px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.2s, border-color 0.2s;
+}
+.photoBtn:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--muted); }
 .lightbox {
   position: fixed;
   inset: 0;
