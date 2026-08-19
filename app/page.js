@@ -35,6 +35,83 @@ function allPhotos(state) {
   return out;
 }
 
+/* ---------- lightbox ---------- */
+
+// Module-level opener so any photo grid can launch the lightbox without prop-drilling.
+let openLightboxFn = null;
+const openLightbox = (photos, i) => openLightboxFn && openLightboxFn(photos, i);
+
+const tokyoDateOf = (iso) =>
+  iso ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(iso)) : null;
+const tokyoTimeOf = (iso) =>
+  iso
+    ? new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Tokyo",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(new Date(iso))
+    : null;
+
+function Lightbox({ data, days, onClose, onNav }) {
+  const { photos, i } = data;
+  const p = photos[i];
+  const touch = useRef(null);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") onNav(1);
+      if (e.key === "ArrowLeft") onNav(-1);
+    };
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose, onNav]);
+
+  if (!p) return null;
+  const date = tokyoDateOf(p.at);
+  const day = days.find((d) => d.date === date);
+
+  return (
+    <div
+      className="lightbox"
+      onClick={onClose}
+      onTouchStart={(e) => (touch.current = e.touches[0].clientX)}
+      onTouchEnd={(e) => {
+        if (touch.current == null) return;
+        const dx = e.changedTouches[0].clientX - touch.current;
+        if (Math.abs(dx) > 50) onNav(dx < 0 ? 1 : -1);
+        touch.current = null;
+      }}
+    >
+      <button className="lbClose" onClick={onClose} aria-label="Close">✕</button>
+      {photos.length > 1 && (
+        <button className="lbNav prev" onClick={(e) => { e.stopPropagation(); onNav(-1); }} aria-label="Previous">‹</button>
+      )}
+      <img src={p.url} alt={p.item || "trip photo"} onClick={(e) => e.stopPropagation()} />
+      {photos.length > 1 && (
+        <button className="lbNav next" onClick={(e) => { e.stopPropagation(); onNav(1); }} aria-label="Next">›</button>
+      )}
+      <div className="lbBar" onClick={(e) => e.stopPropagation()}>
+        <div className="lbTitle">
+          {p.album ? "☁️ " : ""}
+          {p.item || "Trip photo"}
+        </div>
+        <div className="lbMeta">
+          {day ? `${day.title} · ${fmtDay(day.date)}` : date ? fmtDay(date) : ""}
+          {p.at ? ` · ${tokyoTimeOf(p.at)} JST` : ""}
+          {p.by ? ` · 📷 ${p.by}` : ""}
+        </div>
+        {p.caption && <div className="lbCaption">{p.caption}</div>}
+        <div className="lbCount">{i + 1} / {photos.length}</div>
+      </div>
+    </div>
+  );
+}
+
 function useWide() {
   const [wide, setWide] = useState(false);
   useEffect(() => {
@@ -56,6 +133,15 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [myName, setMyName] = useState("");
   const [album, setAlbum] = useState([]);
+  const [lightbox, setLightbox] = useState(null);
+
+  // Wire the module-level lightbox opener to this component's state.
+  useEffect(() => {
+    openLightboxFn = (photos, i) => setLightbox({ photos, i });
+    return () => {
+      openLightboxFn = null;
+    };
+  }, []);
 
   // iCloud Shared Album photos (loaded once we have gate access).
   useEffect(() => {
@@ -230,6 +316,19 @@ export default function Page() {
 
         {toast && <div className="toast">{toast}</div>}
       </div>
+      {lightbox && (
+        <Lightbox
+          data={lightbox}
+          days={state.days}
+          onClose={() => setLightbox(null)}
+          onNav={(dir) =>
+            setLightbox((lb) => ({
+              ...lb,
+              i: (lb.i + dir + lb.photos.length) % lb.photos.length,
+            }))
+          }
+        />
+      )}
     </>
   );
 }
@@ -760,11 +859,15 @@ function ItemDetail({ sel, role, act, busy, upload, canCheck, toggleDone, onDele
       {editing && <EditItemForm obj={obj} act={act} busy={busy} onClose={() => setEditing(false)} />}
       {obj.photos?.length > 0 && (
         <div className="photoGrid">
-          {obj.photos.map((p) => (
+          {obj.photos.map((p, pi) => (
             <div className="ph" key={p.url}>
-              <a href={p.url} target="_blank" rel="noreferrer">
-                <img src={p.url} alt={`${obj.name} by ${p.by}`} loading="lazy" />
-              </a>
+              <img
+                src={p.url}
+                alt={`${obj.name} by ${p.by}`}
+                loading="lazy"
+                className="lbOpen"
+                onClick={() => openLightbox(obj.photos.map((x) => ({ ...x, item: obj.name })), pi)}
+              />
               <span className="who">{p.by}</span>
               {role === "admin" && !p.album && (
                 <button
@@ -931,11 +1034,15 @@ function MobileFixedCard({ f, role, busy, upload, act, canCheck, toggleDone }) {
       {editing && <EditItemForm obj={f} act={act} busy={busy} onClose={() => setEditing(false)} />}
       {f.photos?.length > 0 && (
         <div className="photoGrid">
-          {f.photos.map((p) => (
+          {f.photos.map((p, pi) => (
             <div className="ph" key={p.url}>
-              <a href={p.url} target="_blank" rel="noreferrer">
-                <img src={p.url} alt={`${f.name} by ${p.by}`} loading="lazy" />
-              </a>
+              <img
+                src={p.url}
+                alt={`${f.name} by ${p.by}`}
+                loading="lazy"
+                className="lbOpen"
+                onClick={() => openLightbox(f.photos.map((x) => ({ ...x, item: f.name })), pi)}
+              />
               <span className="who">{p.by}</span>
               {role === "admin" && !p.album && (
                 <button
@@ -1038,11 +1145,15 @@ function MobileItemCard({ day, item, role, open, toggle, act, busy, upload, canC
           {editing && <EditItemForm obj={item} act={act} busy={busy} onClose={() => setEditing(false)} />}
           {item.photos?.length > 0 && (
             <div className="photoGrid">
-              {item.photos.map((p) => (
+              {item.photos.map((p, pi) => (
                 <div className="ph" key={p.url}>
-                  <a href={p.url} target="_blank" rel="noreferrer">
-                    <img src={p.url} alt={`${item.name} by ${p.by}`} loading="lazy" />
-                  </a>
+                  <img
+                    src={p.url}
+                    alt={`${item.name} by ${p.by}`}
+                    loading="lazy"
+                    className="lbOpen"
+                    onClick={() => openLightbox(item.photos.map((x) => ({ ...x, item: item.name })), pi)}
+                  />
                   <span className="who">{p.by}</span>
                   {role === "admin" && !p.album && (
                     <button
@@ -1357,11 +1468,15 @@ function Gallery({ photos, role, act, upload, state }) {
 
       {photos.length > 0 && (
         <div className="gallery">
-          {photos.map((p) => (
+          {photos.map((p, pi) => (
             <figure key={p.url}>
-              <a href={p.url} target="_blank" rel="noreferrer">
-                <img src={p.url} alt={p.item || "trip photo"} loading="lazy" />
-              </a>
+              <img
+                src={p.url}
+                alt={p.item || "trip photo"}
+                loading="lazy"
+                className="lbOpen"
+                onClick={() => openLightbox(photos, pi)}
+              />
               {role === "admin" && !p.album && (
                 <button
                   className="del"
