@@ -55,6 +55,16 @@ export default function Page() {
   const [toast, setToast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [myName, setMyName] = useState("");
+  const [album, setAlbum] = useState([]);
+
+  // iCloud Shared Album photos (loaded once we have gate access).
+  useEffect(() => {
+    if (!data?.access) return;
+    fetch("/api/album")
+      .then((r) => r.json())
+      .then((j) => setAlbum(j.photos || []))
+      .catch(() => {});
+  }, [data?.access]);
 
   useEffect(() => {
     setMyName(localStorage.getItem("wt_name") || "");
@@ -122,6 +132,37 @@ export default function Page() {
     }
   };
 
+  // Merge album photos into the state for display: assigned photos appear on
+  // their item, the rest under general — so all existing photo UI just works.
+  const mergedState = useMemo(() => {
+    const s = data?.state;
+    if (!s) return null;
+    if (!album.length) return s;
+    const copy = JSON.parse(JSON.stringify(s));
+    const byId = {};
+    for (const day of copy.days)
+      for (const it of [...day.items, ...(day.fixed || [])]) byId[it.id] = it;
+    copy.generalPhotos = copy.generalPhotos || [];
+    for (const ap of album) {
+      const photo = {
+        url: ap.url,
+        by: ap.by || "album",
+        at: ap.takenAt,
+        caption: ap.caption || undefined,
+        album: true,
+        guid: ap.guid,
+      };
+      const target = ap.itemId && byId[ap.itemId];
+      if (target) {
+        target.photos = target.photos || [];
+        target.photos.push(photo);
+      } else {
+        copy.generalPhotos.push(photo);
+      }
+    }
+    return copy;
+  }, [data, album]);
+
   if (!data)
     return (
       <>
@@ -132,7 +173,8 @@ export default function Page() {
 
   if (!data.access) return <Gate onIn={setData} />;
 
-  const { role, state } = data;
+  const { role } = data;
+  const state = mergedState;
   const photos = allPhotos(state);
   const pendingCount = state.ideas.filter((i) => i.status === "pending").length;
 
@@ -724,7 +766,7 @@ function ItemDetail({ sel, role, act, busy, upload, canCheck, toggleDone, onDele
                 <img src={p.url} alt={`${obj.name} by ${p.by}`} loading="lazy" />
               </a>
               <span className="who">{p.by}</span>
-              {role === "admin" && (
+              {role === "admin" && !p.album && (
                 <button
                   className="del"
                   onClick={() =>
@@ -895,7 +937,7 @@ function MobileFixedCard({ f, role, busy, upload, act, canCheck, toggleDone }) {
                 <img src={p.url} alt={`${f.name} by ${p.by}`} loading="lazy" />
               </a>
               <span className="who">{p.by}</span>
-              {role === "admin" && (
+              {role === "admin" && !p.album && (
                 <button
                   className="del"
                   onClick={() =>
@@ -1002,7 +1044,7 @@ function MobileItemCard({ day, item, role, open, toggle, act, busy, upload, canC
                     <img src={p.url} alt={`${item.name} by ${p.by}`} loading="lazy" />
                   </a>
                   <span className="who">{p.by}</span>
-                  {role === "admin" && (
+                  {role === "admin" && !p.album && (
                     <button
                       className="del"
                       onClick={() =>
@@ -1320,7 +1362,7 @@ function Gallery({ photos, role, act, upload, state }) {
               <a href={p.url} target="_blank" rel="noreferrer">
                 <img src={p.url} alt={p.item || "trip photo"} loading="lazy" />
               </a>
-              {role === "admin" && (
+              {role === "admin" && !p.album && (
                 <button
                   className="del"
                   onClick={() =>
@@ -1332,7 +1374,7 @@ function Gallery({ photos, role, act, upload, state }) {
                 </button>
               )}
               <figcaption>
-                {p.item ? `${p.item} — ` : ""}{p.by}, {fmtTime(p.at)}
+                {p.album ? "☁️ " : ""}{p.item ? `${p.item} — ` : ""}{p.by}, {fmtTime(p.at)}
               </figcaption>
               {canAssign && (
                 <select
@@ -1340,7 +1382,9 @@ function Gallery({ photos, role, act, upload, state }) {
                   value={p.itemId}
                   onChange={(e) => {
                     const to = e.target.value;
-                    if (to !== p.itemId) act({ type: "movePhoto", url: p.url, toItemId: to }, "Photo reassigned 📌");
+                    if (to === p.itemId) return;
+                    if (p.album) act({ type: "assignAlbumPhoto", guid: p.guid, toItemId: to }, "Photo pinned 📌");
+                    else act({ type: "movePhoto", url: p.url, toItemId: to }, "Photo reassigned 📌");
                   }}
                 >
                   <option value="general">📍 General (no activity)</option>

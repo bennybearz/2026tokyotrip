@@ -3,6 +3,7 @@ import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { readState, writeState } from "../../../../../lib/store";
 import { applyAction } from "../../../../../lib/actions";
+import { fetchAlbumPhotos } from "../../../../../lib/icloud";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -109,6 +110,39 @@ function buildHandler(basePath) {
           const day = state.days.find((d) => d.date === date);
           const item = day.items[day.items.length - 1];
           return text({ ok: true, newItem: slimItem(item) });
+        }
+      );
+
+      server.tool(
+        "get_album_photos",
+        "List photos from the trip's iCloud Shared Album: guid, Tokyo capture time (takenAt) and day, contributor first name, caption, and current itemId assignment (null = general/day-level). Use timestamps + that day's itinerary order to infer which itinerary item each photo belongs to, then pin with assign_album_photo. No image data is returned.",
+        {},
+        async () => {
+          const [photos, state] = await Promise.all([fetchAlbumPhotos(), readState()]);
+          const assignments = state.albumAssignments || {};
+          return text(
+            photos.map((p) => ({
+              guid: p.guid,
+              takenAt: p.takenAt,
+              day: p.day,
+              by: p.by,
+              caption: p.caption || undefined,
+              itemId: assignments[p.guid] || null,
+            }))
+          );
+        }
+      );
+
+      server.tool(
+        "assign_album_photo",
+        "Pin an iCloud album photo to an itinerary item so it shows under that item on the dashboard. Pass toItemId:'general' (or omit) to unpin back to the general day feed.",
+        {
+          guid: z.string().describe("photo guid from get_album_photos"),
+          toItemId: z.string().optional().describe("target item id, or 'general' to unpin"),
+        },
+        async ({ guid, toItemId }) => {
+          const err = await runAction({ type: "assignAlbumPhoto", guid, toItemId });
+          return err || text({ ok: true });
         }
       );
 
