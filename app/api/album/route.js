@@ -1,32 +1,31 @@
 import { NextResponse } from "next/server";
 import { readState } from "../../../lib/store";
 import { hasGateAccess } from "../../../lib/auth";
-import { fetchAlbumPhotos, resolveAssetUrls } from "../../../lib/icloud";
+import { fetchAlbumPhotos, albumDebug } from "../../../lib/icloud";
 
 export const dynamic = "force-dynamic";
 
 // Photos from the iCloud Shared Album, with fresh signed URLs and any
 // item assignments (state.albumAssignments: { photoGuid: itemId }).
-export async function GET() {
+export async function GET(req) {
   if (!(await hasGateAccess())) return NextResponse.json({ photos: [] });
   try {
+    if (new URL(req.url).searchParams.get("debug") === "1") {
+      return NextResponse.json({ debug: await albumDebug() });
+    }
     const [photos, state] = await Promise.all([fetchAlbumPhotos(), readState()]);
-    if (!photos.length) return NextResponse.json({ photos: [] });
-    const urls = await resolveAssetUrls(photos.map((p) => p.guid));
     const assignments = state.albumAssignments || {};
     const out = photos
+      .filter((p) => p.url)
       .map((p) => ({
         guid: p.guid,
-        url: urls[p.checksum] || null,
+        url: p.url,
         by: p.by,
         caption: p.caption,
         takenAt: p.takenAt,
         day: p.day,
-        width: p.width,
-        height: p.height,
         itemId: assignments[p.guid] || null,
-      }))
-      .filter((p) => p.url);
+      }));
     return NextResponse.json(
       { photos: out },
       { headers: { "Cache-Control": "no-store" } }

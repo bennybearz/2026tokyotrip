@@ -3,7 +3,7 @@ import { createMcpHandler } from "mcp-handler";
 import { z } from "zod";
 import { readState, writeState } from "../../../../../lib/store";
 import { applyAction } from "../../../../../lib/actions";
-import { fetchAlbumPhotos } from "../../../../../lib/icloud";
+import { fetchAlbumPhotos, albumDebug } from "../../../../../lib/icloud";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -118,7 +118,10 @@ function buildHandler(basePath) {
         "List photos from the trip's iCloud Shared Album: guid, Tokyo capture time (takenAt) and day, contributor first name, caption, and current itemId assignment (null = general/day-level). Use timestamps + that day's itinerary order to infer which itinerary item each photo belongs to, then pin with assign_album_photo. No image data is returned.",
         {},
         async () => {
-          const [photos, state] = await Promise.all([fetchAlbumPhotos(), readState()]);
+          const [photos, state] = await Promise.all([
+            fetchAlbumPhotos({ withUrls: false }),
+            readState(),
+          ]);
           const assignments = state.albumAssignments || {};
           return text(
             photos.map((p) => ({
@@ -131,6 +134,13 @@ function buildHandler(basePath) {
             }))
           );
         }
+      );
+
+      server.tool(
+        "debug_album",
+        "Diagnostics: raw iCloud album record type counts and field key names (no values). Use to verify the CloudKit feed parsing when get_album_photos looks wrong.",
+        {},
+        async () => text(await albumDebug())
       );
 
       server.tool(
