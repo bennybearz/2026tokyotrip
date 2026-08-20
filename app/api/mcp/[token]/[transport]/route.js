@@ -278,8 +278,61 @@ function buildHandler(basePath) {
       );
 
       server.tool(
+        "move_item",
+        "Move an itinerary item to a different day, keeping its id, source, attribution, photos and done-state intact. If the item came from an idea, that idea's approvedDay follows it automatically. Prefer this over delete_item + add_item, which loses attribution. Fixed (time-locked) items cannot be moved.",
+        {
+          id: z.string().describe("Item id"),
+          toDate: z.string().describe("Destination day date YYYY-MM-DD"),
+          position: z.number().int().optional().describe("Insert index within the destination day's items; appends if omitted"),
+        },
+        async ({ id, toDate, position }) => {
+          const err = await runAction({ type: "moveItem", id, toDate, position });
+          if (err) return err;
+          const state = await readState();
+          const day = state.days.find((d) => d.date === toDate);
+          return text({ ok: true, day: { date: day.date, title: day.title }, items: day.items.map((i) => i.name) });
+        }
+      );
+
+      server.tool(
+        "set_day_title",
+        "Rename a day's heading, and optionally its subtitle. Use after moving items between days so the day labels still describe what is actually on them.",
+        {
+          date: z.string().describe("Day date YYYY-MM-DD"),
+          title: z.string().optional().describe("New heading, e.g. 'Day 3 · Shibuya'"),
+          subtitle: z.string().optional().describe("Optional sub-heading; pass an empty string to clear"),
+        },
+        async ({ date, title, subtitle }) => {
+          const body = { type: "setDayTitle", date };
+          if (title !== undefined) body.title = title;
+          if (subtitle !== undefined) body.subtitle = subtitle;
+          const err = await runAction(body);
+          if (err) return err;
+          const state = await readState();
+          const day = state.days.find((d) => d.date === date);
+          return text({ ok: true, date: day.date, title: day.title, subtitle: day.subtitle || null });
+        }
+      );
+
+      server.tool(
+        "link_item_to_idea",
+        "Repair the link between an itinerary item and the idea it came from: restores source:'idea' and the suggester's name on the item, and points the idea's approvedDay at the day the item actually sits on. Use when an item was rebuilt by hand and lost its attribution.",
+        {
+          itemId: z.string().describe("Item id"),
+          ideaId: z.string().describe("Idea id, e.g. idea-abc12-xyz"),
+        },
+        async ({ itemId, ideaId }) => {
+          const err = await runAction({ type: "linkItemToIdea", itemId, ideaId });
+          if (err) return err;
+          const state = await readState();
+          const idea = state.ideas.find((i) => i.id === ideaId);
+          return text({ ok: true, idea: { id: idea.id, name: idea.name, by: idea.by, approvedDay: idea.approvedDay } });
+        }
+      );
+
+      server.tool(
         "delete_item",
-        "Delete an itinerary item from a day (also removes its photos from storage).",
+        "Delete an itinerary item from a day (also removes its photos from storage). If it came from an idea, that idea is released back to the approved-but-unscheduled pool so schedule_idea can place it again. To relocate an item, use move_item instead — deleting and re-adding loses its attribution and photos.",
         { date: z.string().describe("Day date YYYY-MM-DD"), id: z.string().describe("Item id") },
         async ({ date, id }) => {
           const err = await runAction({ type: "deleteItem", date, id });
