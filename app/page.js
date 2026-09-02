@@ -54,6 +54,31 @@ function dayPhotos(day, state) {
   return out;
 }
 
+// Thumbnail recap for a day that's already happened. Any thumb opens the
+// day's carousel at that photo.
+function DayPhotoStrip({ photos }) {
+  if (!photos.length)
+    return <div className="recapEmpty">No photos from this day yet.</div>;
+  return (
+    <div className="recapPhotos">
+      <div className="photoGrid">
+        {photos.map((p, i) => (
+          <div className="ph" key={p.url || i}>
+            <img
+              src={p.url}
+              alt={p.item || p.caption || "trip photo"}
+              loading="lazy"
+              className="lbOpen"
+              onClick={() => openLightbox(photos, i)}
+            />
+            {p.by && <span className="who">{p.by}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const tokyoDateOf = (iso) =>
   iso ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tokyo" }).format(new Date(iso)) : null;
 const tokyoTimeOf = (iso) =>
@@ -630,7 +655,14 @@ function SplitItinerary({
 }) {
   const today = tokyoToday();
   const sel = findSelected(state, selected);
-  const [showCompleted, setShowCompleted] = useState(false);
+  const [openRecaps, setOpenRecaps] = useState(() => new Set());
+  const toggleRecap = (date) =>
+    setOpenRecaps((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
 
   const Check = ({ obj }) =>
     canCheck ? (
@@ -650,27 +682,42 @@ function SplitItinerary({
 
   const renderDay = (day) => {
     const isToday = day.date === today;
+    const isPast = day.date < today;
+    const photos = dayPhotos(day, state);
+    const showItin = !isPast || openRecaps.has(day.date);
+    const stops = day.items.length + day.fixed.length;
     const fixed = hideDone ? day.fixed.filter((f) => !f.done) : day.fixed;
     const items = hideDone ? day.items.filter((i) => !i.done) : day.items;
     return (
-      <section className="day glass" key={day.date}>
+      <section className={`day glass${isPast ? " recap" : ""}`} key={day.date}>
         <div className="head static">
           <h2>{day.title}</h2>
           <span className="date">
-            {dayPhotos(day, state).length > 0 && (
+            {photos.length > 0 && (
               <button
                 className="photoBtn"
                 title="View this day's photos"
-                onClick={() => openLightbox(dayPhotos(day, state), 0)}
+                onClick={() => openLightbox(photos, 0)}
               >
-                📷 {dayPhotos(day, state).length}
+                📷 {photos.length}
               </button>
             )}
             {isToday && <span className="today">TODAY</span>}
             {fmtDay(day.date)}
           </span>
         </div>
-        {day.subtitle && <p className="subtitle">{day.subtitle}</p>}
+        {day.subtitle && (!isPast || showItin) && (
+          <p className="subtitle">{day.subtitle}</p>
+        )}
+        {isPast && <DayPhotoStrip photos={photos} />}
+        {isPast && stops > 0 && (
+          <button className="recapToggle" onClick={() => toggleRecap(day.date)}>
+            {showItin
+              ? "▾ Hide itinerary"
+              : `▸ Show itinerary · ${stops} stop${stops === 1 ? "" : "s"}`}
+          </button>
+        )}
+        {showItin && (
         <div className="body">
           {fixed.map((f) => (
             <button
@@ -708,27 +755,14 @@ function SplitItinerary({
           )}
           {role === "admin" && <AddItem day={day} act={act} busy={busy} />}
         </div>
+        )}
       </section>
     );
   };
 
-  const activeDays = state.days.filter((d) => d.date >= today);
-  const completedDays = state.days.filter((d) => d.date < today);
-
   return (
     <div className="split">
-      <div className="listCol">
-        {activeDays.map(renderDay)}
-        {completedDays.length > 0 && (
-          <>
-            <button className="completedToggle" onClick={() => setShowCompleted((s) => !s)}>
-              ✓ Completed · {completedDays.length} day{completedDays.length === 1 ? "" : "s"}
-              <span>{showCompleted ? "▾" : "▸"}</span>
-            </button>
-            {showCompleted && completedDays.map(renderDay)}
-          </>
-        )}
-      </div>
+      <div className="listCol">{state.days.map(renderDay)}</div>
 
       <aside className="detailPanel glass">
         {!sel && (
@@ -925,16 +959,18 @@ function MobileItinerary({
   canCheck, toggleDone, hideDone,
 }) {
   const today = tokyoToday();
-  const [showCompleted, setShowCompleted] = useState(false);
 
   const renderDay = (day) => {
     const open = openDay === day.date;
     const isToday = day.date === today;
-    const nPhotos = dayPhotos(day, state).length;
+    const isPast = day.date < today;
+    const photos = dayPhotos(day, state);
+    const nPhotos = photos.length;
+    const stops = day.items.length + day.fixed.length;
     const fixed = hideDone ? day.fixed.filter((f) => !f.done) : day.fixed;
     const items = hideDone ? day.items.filter((i) => !i.done) : day.items;
     return (
-      <section className="day glass" key={day.date}>
+      <section className={`day glass${isPast ? " recap" : ""}`} key={day.date}>
         <div className="head" onClick={() => setOpenDay(open ? null : day.date)}>
           <h2>{day.title}</h2>
           <span className="date">
@@ -946,15 +982,24 @@ function MobileItinerary({
                 title="View this day's photos"
                 onClick={(e) => {
                   e.stopPropagation();
-                  openLightbox(dayPhotos(day, state), 0);
+                  openLightbox(photos, 0);
                 }}
               >
                 📷 {nPhotos}
               </button>
             )}{" "}
-            {open ? "▾" : "▸"}
+            {stops > 0 ? (open ? "▾" : "▸") : ""}
           </span>
         </div>
+        {isPast && <DayPhotoStrip photos={photos} />}
+        {isPast && stops > 0 && !open && (
+          <button
+            className="recapToggle"
+            onClick={() => setOpenDay(day.date)}
+          >
+            {`▸ Show itinerary · ${stops} stop${stops === 1 ? "" : "s"}`}
+          </button>
+        )}
         {open && (
           <>
             {day.subtitle && <p className="subtitle">{day.subtitle}</p>}
@@ -1001,23 +1046,7 @@ function MobileItinerary({
     );
   };
 
-  const activeDays = state.days.filter((d) => d.date >= today);
-  const completedDays = state.days.filter((d) => d.date < today);
-
-  return (
-    <>
-      {activeDays.map(renderDay)}
-      {completedDays.length > 0 && (
-        <>
-          <button className="completedToggle" onClick={() => setShowCompleted((s) => !s)}>
-            ✓ Completed · {completedDays.length} day{completedDays.length === 1 ? "" : "s"}
-            <span>{showCompleted ? "▾" : "▸"}</span>
-          </button>
-          {showCompleted && completedDays.map(renderDay)}
-        </>
-      )}
-    </>
-  );
+  return <>{state.days.map(renderDay)}</>;
 }
 
 function MobileFixedCard({ f, role, busy, upload, act, canCheck, toggleDone }) {

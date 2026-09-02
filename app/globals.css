@@ -484,3 +484,39 @@ textarea { min-height: 76px; resize: vertical; }
   .lightbox > img { max-width: 100vw; max-height: 72vh; border-radius: 0; }
   .lbNav { display: none; } /* swipe instead */
 }
+
+/* ---------- completed-day photo recap ---------- */
+.day.recap > .head h2 { opacity: 0.88; }
+.recapPhotos { padding: 2px 12px 12px; }
+.recapPhotos .photoGrid {
+  margin-top: 0;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+}
+.recapEmpty {
+  padding: 2px 12px 14px;
+  color: var(--muted);
+  font-size: 0.83rem;
+}
+.recapToggle {
+  margin: 0 12px 12px;
+  width: calc(100% - 24px);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--glass2);
+  border: 1px dashed var(--border-strong);
+  transition: color 0.2s, border-color 0.2s;
+}
+.recapToggle:hover { color: var(--text); border-color: var(--muted); }
+@media (min-width: 700px) {
+  .recapPhotos { padding: 2px 16px 14px; }
+  .recapEmpty { padding: 2px 16px 16px; }
+  .recapToggle { margin: 0 16px 14px; width: calc(100% - 32px); }
+}
