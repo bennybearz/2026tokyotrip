@@ -331,8 +331,38 @@ function buildHandler(basePath) {
       );
 
       server.tool(
+        "reject_idea",
+        "Retire an idea for good: sets status to 'rejected' so it leaves the approved pool and the sync routine stops considering it. Works on an idea in ANY status, including one already approved — this is the only way to un-approve, since the dashboard UI only offers Reject on pending ideas. If the idea still has an itinerary item, reject it FIRST and then call delete_item: deleting first releases the idea back into the approved-but-unscheduled pool, where the next sync run will research it and re-slot it onto a remaining day.",
+        { id: z.string().describe("Idea id, e.g. idea-abc12-xyz") },
+        async ({ id }) => {
+          const err = await runAction({ type: "rejectIdea", id });
+          if (err) return err;
+          const state = await readState();
+          const idea = state.ideas.find((i) => i.id === id);
+          const stillScheduled = state.days
+            .flatMap((d) => (d.items || []).map((i) => ({ date: d.date, item: i })))
+            .filter(({ item }) => item.ideaId === id)
+            .map(({ date, item }) => ({ date, itemId: item.id, name: item.name }));
+          return text({
+            ok: true,
+            idea: {
+              id: idea.id,
+              name: idea.name,
+              by: idea.by,
+              status: idea.status,
+              approvedDay: idea.approvedDay ?? null,
+            },
+            stillScheduled,
+            note: stillScheduled.length
+              ? "Idea is rejected but these items remain on the itinerary — delete_item them now if they should go too. Safe to delete in this order."
+              : undefined,
+          });
+        }
+      );
+
+      server.tool(
         "delete_item",
-        "Delete an itinerary item from a day (also removes its photos from storage). If it came from an idea, that idea is released back to the approved-but-unscheduled pool so schedule_idea can place it again. To relocate an item, use move_item instead — deleting and re-adding loses its attribution and photos.",
+        "Delete an itinerary item from a day (also removes its photos from storage). ⚠️ If it came from an idea, that idea is released back to the approved-but-unscheduled pool, which means the next sync run will re-slot it onto a remaining day — to retire something permanently, call reject_idea FIRST, then delete_item. To relocate an item, use move_item instead — deleting and re-adding loses its attribution and photos.",
         { date: z.string().describe("Day date YYYY-MM-DD"), id: z.string().describe("Item id") },
         async ({ date, id }) => {
           const err = await runAction({ type: "deleteItem", date, id });
