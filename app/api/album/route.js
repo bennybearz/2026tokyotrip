@@ -20,6 +20,7 @@ export async function GET(req) {
       .map((p) => ({
         guid: p.guid,
         url: p.url,
+        thumb: p.thumb || p.url,
         by: p.by,
         caption: p.caption,
         takenAt: p.takenAt,

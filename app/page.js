@@ -55,27 +55,65 @@ function dayPhotos(day, state) {
 }
 
 // Thumbnail recap for a day that's already happened. Any thumb opens the
-// day's carousel at that photo.
+// day's carousel at that photo. Only the first two rows are mounted up
+// front - with 500+ album photos, rendering every <img> for every day is
+// what made this page crawl. The rest load on demand.
+const RECAP_ROWS = 2;
+
 function DayPhotoStrip({ photos }) {
+  const gridRef = useRef(null);
+  const [cols, setCols] = useState(4);
+  const [expanded, setExpanded] = useState(false);
+
+  // .photoGrid is auto-fill, so the column count depends on the viewport.
+  // Read it back off the rendered grid so "two rows" means two actual rows.
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const tracks = getComputedStyle(el)
+        .gridTemplateColumns.split(" ")
+        .filter((t) => t && t !== "none");
+      if (tracks.length) setCols(tracks.length);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   if (!photos.length)
     return <div className="recapEmpty">No photos from this day yet.</div>;
+
+  const shown = expanded ? photos : photos.slice(0, cols * RECAP_ROWS);
+  const hidden = photos.length - shown.length;
+
   return (
-    <div className="recapPhotos">
-      <div className="photoGrid">
-        {photos.map((p, i) => (
-          <div className="ph" key={p.url || i}>
-            <img
-              src={p.url}
-              alt={p.item || p.caption || "trip photo"}
-              loading="lazy"
-              className="lbOpen"
-              onClick={() => openLightbox(photos, i)}
-            />
-            {p.by && <span className="who">{p.by}</span>}
-          </div>
-        ))}
+    <>
+      <div className="recapPhotos">
+        <div className="photoGrid" ref={gridRef}>
+          {shown.map((p, i) => (
+            <div className="ph" key={p.url || i}>
+              <img
+                src={p.thumb || p.url}
+                alt={p.item || p.caption || "trip photo"}
+                loading="lazy"
+                className="lbOpen"
+                onClick={() => openLightbox(photos, i)}
+              />
+              {p.by && <span className="who">{p.by}</span>}
+            </div>
+          ))}
+        </div>
       </div>
-    </div>
+      {(hidden > 0 || expanded) && (
+        <button className="recapToggle" onClick={() => setExpanded((v) => !v)}>
+          {expanded
+            ? "▾ Show fewer photos"
+            : `▸ Show all ${photos.length} photos`}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -270,6 +308,7 @@ export default function Page() {
     for (const ap of album) {
       const photo = {
         url: ap.url,
+        thumb: ap.thumb || ap.url,
         by: ap.by || "album",
         at: ap.takenAt,
         caption: ap.caption || undefined,
@@ -928,7 +967,7 @@ function ItemDetail({ sel, role, act, busy, upload, canCheck, toggleDone, onDele
           {obj.photos.map((p, pi) => (
             <div className="ph" key={p.url}>
               <img
-                src={p.url}
+                src={p.thumb || p.url}
                 alt={`${obj.name} by ${p.by}`}
                 loading="lazy"
                 className="lbOpen"
@@ -1121,7 +1160,7 @@ function MobileFixedCard({ f, role, busy, upload, act, canCheck, toggleDone }) {
           {f.photos.map((p, pi) => (
             <div className="ph" key={p.url}>
               <img
-                src={p.url}
+                src={p.thumb || p.url}
                 alt={`${f.name} by ${p.by}`}
                 loading="lazy"
                 className="lbOpen"
@@ -1242,7 +1281,7 @@ function MobileItemCard({ day, item, role, open, toggle, act, busy, upload, canC
               {item.photos.map((p, pi) => (
                 <div className="ph" key={p.url}>
                   <img
-                    src={p.url}
+                    src={p.thumb || p.url}
                     alt={`${item.name} by ${p.by}`}
                     loading="lazy"
                     className="lbOpen"
@@ -1565,7 +1604,7 @@ function Gallery({ photos, role, act, upload, state }) {
           {photos.map((p, pi) => (
             <figure key={p.url}>
               <img
-                src={p.url}
+                src={p.thumb || p.url}
                 alt={p.item || "trip photo"}
                 loading="lazy"
                 className="lbOpen"
