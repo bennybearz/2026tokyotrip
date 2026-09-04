@@ -15,6 +15,12 @@ export async function GET(req) {
     }
     const [photos, state] = await Promise.all([fetchAlbumPhotos(), readState()]);
     const assignments = state.albumAssignments || {};
+    // A pin may have been made against a copy we collapsed away.
+    const itemFor = (p) => {
+      if (assignments[p.guid]) return assignments[p.guid];
+      for (const g of p.dupeGuids || []) if (assignments[g]) return assignments[g];
+      return null;
+    };
     const out = photos
       .filter((p) => p.url)
       .map((p) => ({
@@ -25,7 +31,7 @@ export async function GET(req) {
         caption: p.caption,
         takenAt: p.takenAt,
         day: p.day,
-        itemId: assignments[p.guid] || null,
+        itemId: itemFor(p),
       }));
     return NextResponse.json(
       { photos: out },
